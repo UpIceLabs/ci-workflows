@@ -1,0 +1,48 @@
+name: node-gates
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "22"
+      working-directory:
+        type: string
+        default: "."
+      run-lint:
+        type: boolean
+        default: true
+      run-typecheck:
+        type: boolean
+        default: true
+      run-tests:
+        type: boolean
+        default: true
+      runs-on:
+        description: 'JSON array or plain label, e.g. ubuntu-latest or ["self-hosted","mothership"]'
+        type: string
+        default: "ubuntu-latest"
+
+jobs:
+  gates:
+    runs-on: ${{ fromJSON(startsWith(inputs['runs-on'], '[') && inputs['runs-on'] || format('["{0}"]', inputs['runs-on'])) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - run: npm ci
+      - name: Lint
+        if: ${{ inputs.run-lint }}
+        run: npm run lint --if-present
+      - name: Typecheck
+        if: ${{ inputs.run-typecheck }}
+        run: npm run typecheck --if-present
+      - name: Test
+        if: ${{ inputs.run-tests }}
+        run: npm test --if-present

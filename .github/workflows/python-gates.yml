@@ -1,0 +1,53 @@
+name: python-gates
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: "3.12"
+      working-directory:
+        type: string
+        default: "."
+      run-lint:
+        type: boolean
+        default: true
+      run-tests:
+        type: boolean
+        default: true
+      runs-on:
+        description: 'JSON array or plain label, e.g. ubuntu-latest or ["self-hosted","mothership"]'
+        type: string
+        default: "ubuntu-latest"
+
+jobs:
+  gates:
+    runs-on: ${{ fromJSON(startsWith(inputs['runs-on'], '[') && inputs['runs-on'] || format('["{0}"]', inputs['runs-on'])) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e ".[dev]" 2>/dev/null || pip install -e .; fi
+      - name: Lint (ruff)
+        if: ${{ inputs.run-lint }}
+        run: |
+          pip install ruff
+          ruff check .
+      - name: Test (pytest)
+        if: ${{ inputs.run-tests }}
+        run: |
+          if compgen -G "tests/*" > /dev/null || compgen -G "test_*.py" > /dev/null; then
+            pip install pytest
+            pytest -q
+          else
+            echo "no tests found, skipping"
+          fi
