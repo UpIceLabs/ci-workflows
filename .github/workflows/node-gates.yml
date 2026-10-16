@@ -1,0 +1,50 @@
+name: node-gates
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "22"
+      working-directory:
+        type: string
+        default: "."
+      run-lint:
+        type: boolean
+        default: true
+      run-typecheck:
+        type: boolean
+        default: true
+      run-tests:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - run: npm ci
+      - name: Lint
+        if: ${{ inputs.run-lint }}
+        run: npm run lint
+      - name: Typecheck
+        if: ${{ inputs.run-typecheck }}
+        run: npm run typecheck
+      - name: Test
+        if: ${{ inputs.run-tests }}
+        run: npm test

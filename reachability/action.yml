@@ -1,0 +1,29 @@
+name: Check CI reachability
+description: Audit declared tenancy and secret checks without executing repository code
+inputs:
+  repository:
+    description: Path to the repository checkout
+    default: .
+  manifest:
+    description: Declaration path relative to the repository checkout
+    default: .github/ci-checks.json
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      with:
+        node-version: '22'
+    - name: Install checker dependencies
+      shell: bash
+      env:
+        CHECKER_ROOT: ${{ github.action_path }}
+      run: npm ci --ignore-scripts --no-audit --no-fund --prefix "$CHECKER_ROOT"
+    - name: Audit security check routes
+      shell: bash
+      env:
+        CHECKER_ROOT: ${{ github.action_path }}
+        CHECKER_REPOSITORY: ${{ github.action_repository }}
+        CHECKER_REF: ${{ github.action_ref }}
+        REPOSITORY_PATH: ${{ inputs.repository }}
+        MANIFEST_PATH: ${{ inputs.manifest }}
+      run: node "$CHECKER_ROOT/check-reachability.cjs" "$REPOSITORY_PATH" "$REPOSITORY_PATH/$MANIFEST_PATH" --library "$CHECKER_REPOSITORY@$CHECKER_REF=$CHECKER_ROOT/.."

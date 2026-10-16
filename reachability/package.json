@@ -1,0 +1,9 @@
+{
+  "name": "ci-reachability",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Static reachability audit for declared CI security checks",
+  "scripts": {"test": "node --test check-reachability.test.cjs"},
+  "dependencies": {"js-yaml": "4.2.0"},
+  "engines": {"node": ">=22"}
+}

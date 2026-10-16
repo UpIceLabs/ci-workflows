@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "id": "secret-scan",
+      "kind": "secret",
+      "workflow": ".github/workflows/secret-scan.yml",
+      "job": "scan",
+      "run": "gitleaks git --redact --log-opts=\"--all\" ."
+    }
+  ]
+}
