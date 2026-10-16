@@ -23,6 +23,13 @@ test('public workflows use hosted runners, read-only permissions and pinned Acti
   }
  }
 });
+test('composite Action pins dependencies and disables npm lifecycle scripts', () => {
+ const action=read('reachability/action.yml');
+ for (const step of action.runs.steps) {
+  if (step.uses) assert.match(step.uses, /@[a-f0-9]{40}$/);
+  if (step.run?.includes('npm ci')) assert.match(step.run, /--ignore-scripts/);
+ }
+});
 test('Python fails on zero tests and failing tests, passes real success', t => {
  const step = read('.github/workflows/python-gates.yml').jobs.gates.steps.find(s => s.name === 'Test (pytest)');
  // Hosted CI installs dependencies; execute the actual workflow test command here.

@@ -30,3 +30,12 @@ jobs:
       - run: npm test --prefix reachability
       - run: node --test tests/*.test.cjs
       - uses: ./reachability
+  node-smoke:
+    uses: ./.github/workflows/node-gates.yml
+    with:
+      working-directory: tests/fixtures/node
+      run-typecheck: false
+  python-smoke:
+    uses: ./.github/workflows/python-gates.yml
+    with:
+      working-directory: tests/fixtures/python
