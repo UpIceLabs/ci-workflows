@@ -7,6 +7,7 @@ const {spawnSync} = require('node:child_process');
 const yaml = require('../reachability/node_modules/js-yaml');
 const root = path.resolve(__dirname, '..');
 const read = file => yaml.load(fs.readFileSync(path.join(root, file), 'utf8'));
+const reusable = ['node-gates.yml', 'python-gates.yml', 'secret-scan.yml'];
 test('public workflows use hosted runners, read-only permissions and pinned Actions', () => {
  for (const file of fs.readdirSync(path.join(root, '.github/workflows'))) {
   const workflow = read(`.github/workflows/${file}`);
@@ -15,6 +16,11 @@ test('public workflows use hosted runners, read-only permissions and pinned Acti
   assert.deepEqual(workflow.permissions, {contents:'read'});
   for (const job of Object.values(workflow.jobs)) {
    if (job.uses) assert.match(job.uses, /^\.\//);
+   else if (reusable.includes(file)) {
+    assert.match(job['runs-on'], /inputs\['runs-on'\] \|\| vars\.CI_RUNNER \|\| 'ubuntu-latest'/);
+    assert.equal(workflow.on.workflow_call.inputs['runs-on'].type, 'string');
+    assert.equal(workflow.on.workflow_call.inputs['runs-on'].default, '');
+   }
    else assert.equal(job['runs-on'], 'ubuntu-latest');
    for (const step of job.steps || []) {
     if (step.uses && !step.uses.startsWith('./')) assert.match(step.uses, /@[a-f0-9]{40}$/);
@@ -47,4 +53,8 @@ test('the library declares an unconditional secret scan route', () => {
  const {audit} = require('../reachability/check-reachability.cjs');
  const manifest=JSON.parse(fs.readFileSync(path.join(root,'.github/ci-checks.json'),'utf8'));
  assert.equal(audit(root,manifest)[0].unconditional_pr,true);
+});
+test('all three reusable gates share one runs-on expression', () => {
+ const expressions = reusable.map(file => Object.values(read(`.github/workflows/${file}`).jobs)[0]['runs-on']);
+ assert.equal(new Set(expressions).size, 1);
 });

@@ -25,17 +25,43 @@ Reusable workflows:
 
 - `secret-scan.yml`: checksum-pinned Gitleaks CLI, full fetched history, redacted
   output. No organization license or caller secret needed. Failure blocks the job.
+  Input: `runs-on`.
 - `python-gates.yml`: install project dependencies, Ruff, pytest. Enabled tests
   fail when no tests are collected. Inputs: `python-version`, `working-directory`,
-  `run-lint`, `run-tests`.
+  `run-lint`, `run-tests`, `runs-on`.
 - `node-gates.yml`: npm ci, lint, typecheck, test. Missing enabled scripts fail.
-  Inputs: `node-version`, `working-directory`, `run-lint`, `run-typecheck`, `run-tests`.
+  Inputs: `node-version`, `working-directory`, `run-lint`, `run-typecheck`, `run-tests`, `runs-on`.
 
-These initial workflows run on GitHub-hosted Ubuntu only. No runner-selection
-input exists. Callers choose when workflows run; security scans should be invoked
+## Runner selection
+
+Every reusable workflow takes a `runs-on` string input. The runner is chosen in
+this order:
+
+1. The caller's `runs-on` input, a single label (`ubuntu-latest`) or a JSON array
+   of labels (`'["self-hosted","linux-ci"]'`).
+2. The caller's repository or organization variable `CI_RUNNER`, in the same format.
+3. `ubuntu-latest`.
+
+With no input and no `CI_RUNNER`, every workflow runs on GitHub-hosted Ubuntu, as
+before. `CI_RUNNER` is read from the calling repository's variables, so set it
+only where you mean every gate in that repository to move. Self-hosted use is
+optional, and hosted runs remain the confirmation path.
+
+```yaml
+jobs:
+  python:
+    uses: UpIceLabs/ci-workflows/.github/workflows/python-gates.yml@REVIEWED_COMMIT_SHA
+    with:
+      runs-on: '["self-hosted","linux-ci"]'
+```
+
+Callers choose when workflows run; security scans should be invoked
 on every PR without path filtering. Explicit `run-*` opt-outs are policy choices,
 not passing checks. Repository dependencies and package scripts are executed;
 run untrusted contributions only in disposable runners without privileged secrets.
+This library does not provide or manage runners. A persistent self-hosted runner
+that runs pull request code from forks or other untrusted sources is outside the
+supported use; see the boundaries below.
 
 ## Reachability audit
 
@@ -69,7 +95,8 @@ protect CI policy changes with review and required checks outside this audit.
 ## Maintenance and security boundaries
 
 - Keep permissions read-only; never use `pull_request_target` to execute PR code.
-- Do not grant public projects access to persistent internal runner groups.
+- Do not grant public projects access to persistent internal runner groups, and
+  do not point `runs-on` or `CI_RUNNER` at one for untrusted pull requests.
 - Pin third-party Actions by full commit and downloaded binaries by checksum.
 - Project dependency locking remains the consumer's responsibility. Python tool
   versions are pinned but their transitives are not hash-locked; this is not a

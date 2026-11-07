@@ -18,13 +18,17 @@ on:
       run-tests:
         type: boolean
         default: true
+      runs-on:
+        description: 'Runner label or JSON array of labels, for example ["self-hosted","linux-ci"]. Empty uses vars.CI_RUNNER, then ubuntu-latest.'
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
   gates:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(startsWith(inputs['runs-on'] || vars.CI_RUNNER || 'ubuntu-latest', '[') && (inputs['runs-on'] || vars.CI_RUNNER || 'ubuntu-latest') || format('["{0}"]', inputs['runs-on'] || vars.CI_RUNNER || 'ubuntu-latest')) }}
     timeout-minutes: 15
     defaults:
       run:
