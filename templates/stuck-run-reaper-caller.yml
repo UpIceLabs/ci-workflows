@@ -1,0 +1,39 @@
+# Starter caller for the stuck-run reaper. Replace REVIEWED_COMMIT_SHA.
+# Report-only by default: calls stuck-run-reaper.yml, which requests no write
+# permission. To cancel, use the commented cancel variant at the bottom instead
+# (stuck-run-reaper-cancel.yml, the only workflow requesting actions: write).
+# The runner needs the gh CLI installed.
+name: stuck-run-reaper
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stuck-run-reaper
+  cancel-in-progress: false
+jobs:
+  reap:
+    permissions:
+      contents: read
+      actions: read
+    uses: UpIceLabs/ci-workflows/.github/workflows/stuck-run-reaper.yml@REVIEWED_COMMIT_SHA
+    with:
+      # REQUIRED. Allowed non-merge self-hosted runner, not CI_RUNNER.
+      runs-on: '["self-hosted","auditor"]'
+      # Workflows that legitimately run longer than the thresholds (names or
+      # file names, newline or comma separated), e.g. deploy and nightly jobs.
+      exclude-workflows: ""
+
+  # Cancel variant: replace the `reap` job above with this one only after
+  # reviewing a report-only run.
+  # reap:
+  #   permissions:
+  #     contents: read
+  #     actions: write
+  #   uses: UpIceLabs/ci-workflows/.github/workflows/stuck-run-reaper-cancel.yml@REVIEWED_COMMIT_SHA
+  #   with:
+  #     runs-on: '["self-hosted","auditor"]'
+  #     exclude-workflows: ""

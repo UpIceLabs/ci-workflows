@@ -1,0 +1,34 @@
+# Starter caller. Replace REVIEWED_COMMIT_SHA with a full 40-char commit of
+# UpIceLabs/ci-workflows (never a branch or tag for security-sensitive use).
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+# One run per PR (or ref). New pushes cancel superseded PR runs only; main
+# pushes are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  secrets:
+    uses: UpIceLabs/ci-workflows/.github/workflows/secret-scan.yml@REVIEWED_COMMIT_SHA
+    with:
+      # Hosted Actions spend is frozen: always pass an allowed self-hosted runner,
+      # never rely on the implicit ubuntu-latest fallback.
+      runs-on: '<ALLOWED_RUNNER_JSON e.g. ["self-hosted","linux-ci"]>'
+      timeout-minutes: 10
+  node:
+    uses: UpIceLabs/ci-workflows/.github/workflows/node-gates.yml@REVIEWED_COMMIT_SHA
+    with:
+      # Hosted Actions spend is frozen: always pass an allowed self-hosted runner,
+      # never rely on the implicit ubuntu-latest fallback.
+      runs-on: '<ALLOWED_RUNNER_JSON e.g. ["self-hosted","linux-ci"]>'
+      timeout-minutes: 15
+  # Your own jobs: always set timeout-minutes (GitHub default is 360).
+  # build:
+  #   runs-on: [self-hosted, linux-ci]   # an allowed self-hosted runner; hosted spend is frozen
+  #   timeout-minutes: 15
+  #   steps: [...]

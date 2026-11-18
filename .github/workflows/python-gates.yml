@@ -19,6 +19,10 @@ on:
         description: 'Runner label or JSON array of labels, for example ["self-hosted","linux-ci"]. Empty uses vars.CI_RUNNER, then ubuntu-latest.'
         type: string
         default: ""
+      timeout-minutes:
+        description: 'Job timeout in minutes (GitHub default is 360).'
+        type: number
+        default: 15
 
 permissions:
   contents: read
@@ -26,7 +30,7 @@ permissions:
 jobs:
   gates:
     runs-on: ${{ fromJSON(startsWith(inputs['runs-on'] || vars.CI_RUNNER || 'ubuntu-latest', '[') && (inputs['runs-on'] || vars.CI_RUNNER || 'ubuntu-latest') || format('["{0}"]', inputs['runs-on'] || vars.CI_RUNNER || 'ubuntu-latest')) }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}

@@ -25,12 +25,41 @@ Reusable workflows:
 
 - `secret-scan.yml`: checksum-pinned Gitleaks CLI, full fetched history, redacted
   output. No organization license or caller secret needed. Failure blocks the job.
-  Input: `runs-on`.
+  Inputs: `runs-on`, `timeout-minutes` (default 10).
 - `python-gates.yml`: install project dependencies, Ruff, pytest. Enabled tests
   fail when no tests are collected. Inputs: `python-version`, `working-directory`,
-  `run-lint`, `run-tests`, `runs-on`.
+  `run-lint`, `run-tests`, `runs-on`, `timeout-minutes` (default 15).
 - `node-gates.yml`: npm ci, lint, typecheck, test. Missing enabled scripts fail.
-  Inputs: `node-version`, `working-directory`, `run-lint`, `run-typecheck`, `run-tests`, `runs-on`.
+  Inputs: `node-version`, `working-directory`, `run-lint`, `run-typecheck`, `run-tests`, `runs-on`, `timeout-minutes` (default 15).
+- `stuck-run-reaper.yml` (report only, read-only permissions everywhere) and
+  `stuck-run-reaper-cancel.yml` (reports and cancels; the only workflow requesting
+  `actions: write`, so only callers that choose it grant that permission). Both
+  list the calling repository's runs that are queued longer than
+  `queued-max-minutes` (default 120, from createdAt) or in_progress longer than
+  `in-progress-max-minutes` (default 180, from startedAt), excluding their own
+  run, up to 500 runs per status. They need the `gh` CLI on the runner (they fail
+  with a clear message if it is missing; install it on self-hosted runners).
+  Inputs: `queued-max-minutes`, `in-progress-max-minutes`, `exclude-workflows`
+  (newline or comma list of workflow names or file names to skip, for deploy or
+  nightly workflows that legitimately run longer than the thresholds), `runs-on`
+  (REQUIRED, no default: hosted spend is frozen, so pass an allowed non-merge
+  self-hosted runner such as `'["self-hosted","auditor"]'`; deliberately not
+  `CI_RUNNER`, so the reaper does not queue behind the runs it reaps),
+  `timeout-minutes` (default 5).
+
+## Starter caller workflow
+
+Copy `templates/ci-caller.yml` into the consumer repository and replace
+`REVIEWED_COMMIT_SHA`. It sets a PR concurrency group that cancels superseded
+PR runs only, a `timeout-minutes` on every job, an explicit `runs-on`
+placeholder on each gate (hosted spend is frozen; no implicit ubuntu-latest), and
+pinned calls to the gates. It does not call the reaper. A third-party consumer's own jobs need their own `timeout-minutes`:
+a reusable gate's input only bounds the gate's job.
+
+The reaper is a separate caller file (`templates/stuck-run-reaper-caller.yml`)
+because it runs on `schedule`. Enable cancelling only after reviewing a
+report-only run, then switch the caller to `stuck-run-reaper-cancel.yml` (the
+commented variant in the template) and grant `actions: write` on that job.
 
 ## Runner selection
 

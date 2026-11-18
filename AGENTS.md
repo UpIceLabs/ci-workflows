@@ -10,3 +10,10 @@ input, with a `vars.CI_RUNNER` fallback and `ubuntu-latest` as the default, so
 callers (CEO decision, 2026-11-06, BEN-17190) choose their own runner; keep the
 default hosted and keep the three workflows' expressions identical. Pin
 third-party Actions and document consumer-facing compatibility changes.
+
+Permissions are read-only by default. The one named exception is
+`stuck-run-reaper-cancel.yml`, the only file requesting `actions: write`
+(job-level, because cancelling a run needs it). `stuck-run-reaper.yml` is
+report-only and read-only everywhere; the two are separate files because GitHub
+validates a called workflow's requested permissions for all jobs at startup. A
+caller grants `actions: write` itself only to use the cancel workflow.
