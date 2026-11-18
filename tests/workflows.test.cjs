@@ -17,8 +17,10 @@ test('public workflows use hosted runners, read-only permissions and pinned Acti
   for (const job of Object.values(workflow.jobs)) {
    if (job.uses) assert.match(job.uses, /^\.\//);
    else if (file === 'stuck-run-reaper.yml') {
-    assert.equal(job['runs-on'], '${{ inputs.runs-on }}');
-    assert.equal(workflow.on.workflow_call.inputs['runs-on'].default, 'ubuntu-latest');
+    assert.match(job['runs-on'], /inputs\.runs-on/);
+    assert.doesNotMatch(job['runs-on'], /ubuntu-latest|CI_RUNNER/);
+    assert.equal(workflow.on.workflow_call.inputs['runs-on'].required, true);
+    assert.equal(workflow.on.workflow_call.inputs['runs-on'].default, undefined);
    }
    else if (reusable.includes(file)) {
     assert.match(job['runs-on'], /inputs\['runs-on'\] \|\| vars\.CI_RUNNER \|\| 'ubuntu-latest'/);

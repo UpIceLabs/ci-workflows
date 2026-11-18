@@ -36,8 +36,10 @@ Reusable workflows:
   longer than `in-progress-max-minutes` (default 180, from startedAt), excluding
   its own run. Report-only by default (`actions: read`). `cancel: true` runs a
   separate `cancel` job, the only one with `actions: write`. Inputs: `cancel`,
-  `queued-max-minutes`, `in-progress-max-minutes`, `runs-on` (default
-  `ubuntu-latest`; keep it hosted), `timeout-minutes` (default 5).
+  `queued-max-minutes`, `in-progress-max-minutes`, `runs-on` (REQUIRED, no
+  default: hosted spend is frozen, so pass an allowed non-merge self-hosted runner such
+  as `'["self-hosted","auditor"]'`; deliberately not `CI_RUNNER`, so the reaper
+  does not queue behind the runs it reaps), `timeout-minutes` (default 5).
 
 ## Starter caller workflow
 

@@ -18,4 +18,6 @@ jobs:
       actions: read   # change to write only together with cancel: true
     uses: UpIceLabs/ci-workflows/.github/workflows/stuck-run-reaper.yml@REVIEWED_COMMIT_SHA
     with:
+      # REQUIRED. Allowed non-merge self-hosted runner, not CI_RUNNER.
+      runs-on: '["self-hosted","auditor"]'
       cancel: false
