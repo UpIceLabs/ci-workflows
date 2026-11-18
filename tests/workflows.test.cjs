@@ -13,9 +13,13 @@ test('public workflows use hosted runners, read-only permissions and pinned Acti
   const workflow = read(`.github/workflows/${file}`);
   assert.equal(workflow.on?.pull_request_target, undefined);
   assert.equal(workflow.on?.workflow_run, undefined);
-  assert.deepEqual(workflow.permissions, {contents:'read'});
+  assert.deepEqual(workflow.permissions, file === 'stuck-run-reaper.yml' ? {contents:'read',actions:'read'} : {contents:'read'});
   for (const job of Object.values(workflow.jobs)) {
    if (job.uses) assert.match(job.uses, /^\.\//);
+   else if (file === 'stuck-run-reaper.yml') {
+    assert.equal(job['runs-on'], '${{ inputs.runs-on }}');
+    assert.equal(workflow.on.workflow_call.inputs['runs-on'].default, 'ubuntu-latest');
+   }
    else if (reusable.includes(file)) {
     assert.match(job['runs-on'], /inputs\['runs-on'\] \|\| vars\.CI_RUNNER \|\| 'ubuntu-latest'/);
     assert.equal(workflow.on.workflow_call.inputs['runs-on'].type, 'string');
@@ -57,4 +61,31 @@ test('the library declares an unconditional secret scan route', () => {
 test('all three reusable gates share one runs-on expression', () => {
  const expressions = reusable.map(file => Object.values(read(`.github/workflows/${file}`).jobs)[0]['runs-on']);
  assert.equal(new Set(expressions).size, 1);
+});
+test('every job has timeout-minutes; reusable gates take it as an input', () => {
+ for (const file of fs.readdirSync(path.join(root, '.github/workflows'))) {
+  const workflow = read(`.github/workflows/${file}`);
+  for (const [name, job] of Object.entries(workflow.jobs)) {
+   if (job.uses) continue; // timeout lives in the called workflow
+   assert.ok(job['timeout-minutes'] !== undefined, `${file}:${name} lacks timeout-minutes`);
+   if (file !== 'ci.yml') {
+    assert.equal(job['timeout-minutes'], '${{ inputs.timeout-minutes }}');
+    assert.equal(workflow.on.workflow_call.inputs['timeout-minutes'].type, 'number');
+    assert.ok(workflow.on.workflow_call.inputs['timeout-minutes'].default > 0);
+   }
+  }
+ }
+});
+test('stuck-run-reaper: only the cancel job has actions: write, and only when cancel is true', () => {
+ const w = read('.github/workflows/stuck-run-reaper.yml');
+ assert.ok(w.on.workflow_call, 'must be workflow_call');
+ assert.equal(w.on.workflow_call.inputs.cancel.default, false);
+ assert.equal(w.on.workflow_call.inputs['in-progress-max-minutes'].default, 180);
+ assert.equal(w.on.workflow_call.inputs['queued-max-minutes'].default, 120);
+ for (const [name, job] of Object.entries(w.jobs)) {
+  const write = job.permissions?.actions === 'write';
+  assert.equal(write, name === 'cancel', name);
+  assert.match(job.if, name === 'cancel' ? /^\$\{\{ inputs\.cancel \}\}$/ : /^\$\{\{ !inputs\.cancel \}\}$/);
+  assert.match(job.steps[0].run, /databaseId != \$\{SELF_RUN_ID\}/);
+ }
 });

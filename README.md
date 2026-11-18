@@ -25,12 +25,31 @@ Reusable workflows:
 
 - `secret-scan.yml`: checksum-pinned Gitleaks CLI, full fetched history, redacted
   output. No organization license or caller secret needed. Failure blocks the job.
-  Input: `runs-on`.
+  Inputs: `runs-on`, `timeout-minutes` (default 10).
 - `python-gates.yml`: install project dependencies, Ruff, pytest. Enabled tests
   fail when no tests are collected. Inputs: `python-version`, `working-directory`,
-  `run-lint`, `run-tests`, `runs-on`.
+  `run-lint`, `run-tests`, `runs-on`, `timeout-minutes` (default 15).
 - `node-gates.yml`: npm ci, lint, typecheck, test. Missing enabled scripts fail.
-  Inputs: `node-version`, `working-directory`, `run-lint`, `run-typecheck`, `run-tests`, `runs-on`.
+  Inputs: `node-version`, `working-directory`, `run-lint`, `run-typecheck`, `run-tests`, `runs-on`, `timeout-minutes` (default 15).
+- `stuck-run-reaper.yml`: lists the calling repository's runs that are queued
+  longer than `queued-max-minutes` (default 120, from createdAt) or in_progress
+  longer than `in-progress-max-minutes` (default 180, from startedAt), excluding
+  its own run. Report-only by default (`actions: read`). `cancel: true` runs a
+  separate `cancel` job, the only one with `actions: write`. Inputs: `cancel`,
+  `queued-max-minutes`, `in-progress-max-minutes`, `runs-on` (default
+  `ubuntu-latest`; keep it hosted), `timeout-minutes` (default 5).
+
+## Starter caller workflow
+
+Copy `templates/ci-caller.yml` into the consumer repository and replace
+`REVIEWED_COMMIT_SHA`. It sets a PR concurrency group that cancels superseded
+PR runs only, a `timeout-minutes` on every job, and pinned calls to the gates and
+the reaper. A third-party consumer's own jobs need their own `timeout-minutes`:
+a reusable gate's input only bounds the gate's job.
+
+The reaper is a separate caller file (`templates/stuck-run-reaper-caller.yml`)
+because it runs on `schedule`. Enable cancelling only after reviewing a
+report-only run; the cancel caller must grant `actions: write`.
 
 ## Runner selection
 

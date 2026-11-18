@@ -1,0 +1,21 @@
+# Starter caller for the stuck-run reaper. Replace REVIEWED_COMMIT_SHA.
+# Report-only by default. To cancel: set cancel: true AND grant actions: write.
+name: stuck-run-reaper
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: stuck-run-reaper
+  cancel-in-progress: false
+jobs:
+  reap:
+    permissions:
+      contents: read
+      actions: read   # change to write only together with cancel: true
+    uses: UpIceLabs/ci-workflows/.github/workflows/stuck-run-reaper.yml@REVIEWED_COMMIT_SHA
+    with:
+      cancel: false

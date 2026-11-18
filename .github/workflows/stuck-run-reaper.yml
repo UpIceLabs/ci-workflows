@@ -1,0 +1,121 @@
+# Reusable stuck-run reaper (BEN-17832). Finds runs of the CALLING repository
+# that are stuck: queued longer than `queued-max-minutes` (from createdAt) or
+# in_progress longer than `in-progress-max-minutes` (from startedAt, so re-runs
+# of old runs are not flagged). Own run is excluded.
+#
+# Default is report-only: the `report` job needs only actions: read.
+# With `cancel: true` the separate `cancel` job runs instead and is the only
+# job with actions: write. A called workflow cannot raise permissions above
+# the calling job, so the caller grants actions: write only when it sets
+# cancel: true (see README starter).
+#
+# Keep runs-on a GitHub-hosted runner: on a self-hosted pool the reaper would
+# queue behind the runs it is meant to reap.
+name: stuck-run-reaper
+
+on:
+  workflow_call:
+    inputs:
+      cancel:
+        description: 'Cancel stuck runs instead of only reporting them. Caller must grant actions: write.'
+        type: boolean
+        default: false
+      in-progress-max-minutes:
+        type: number
+        default: 180
+      queued-max-minutes:
+        type: number
+        default: 120
+      runs-on:
+        description: 'Runner label (single label). Keep hosted.'
+        type: string
+        default: ubuntu-latest
+      timeout-minutes:
+        type: number
+        default: 5
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  report:
+    if: ${{ !inputs.cancel }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Report stuck runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SELF_RUN_ID: ${{ github.run_id }}
+          QUEUED_MAX: ${{ inputs.queued-max-minutes }}
+          RUNNING_MAX: ${{ inputs.in-progress-max-minutes }}
+          CANCEL: "false"
+        run: |
+          set -euo pipefail
+          mode=dry-run; [ "$CANCEL" = "true" ] && mode=cancel
+          {
+            echo "## Stuck-run reaper (${mode}; queued > ${QUEUED_MAX} min, in_progress > ${RUNNING_MAX} min)"
+            echo
+            echo "| run | workflow | status | age (min) | action |"
+            echo "|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for status in queued in_progress; do
+            # queued: age since createdAt. in_progress: age since startedAt
+            # (run_started_at), which resets on re-run; createdAt does not.
+            if [ "$status" = "queued" ]; then field=createdAt; max=$QUEUED_MAX; else field=startedAt; max=$RUNNING_MAX; fi
+            gh run list -R "$REPO" --status "$status" --limit 100 \
+              --json databaseId,createdAt,startedAt,workflowName \
+              --jq ".[] | select(.databaseId != ${SELF_RUN_ID}) | select(.${field} != null and .${field} != \"\") | select((now - (.${field} | fromdateiso8601)) > (${max} * 60)) | \"\(.databaseId)\t\(.workflowName)\t\(((now - (.${field} | fromdateiso8601)) / 60) | floor)\"" \
+            | while IFS=$'\t' read -r id name age; do
+                action="would cancel"
+                if [ "$mode" = "cancel" ]; then
+                  if gh run cancel -R "$REPO" "$id"; then action="cancelled"; else action="cancel failed"; fi
+                fi
+                echo "::warning::stuck run $id ($name, $status, ${age} min): $action"
+                echo "| $id | $name | $status | $age | $action |" >> "$GITHUB_STEP_SUMMARY"
+              done
+          done
+  cancel:
+    if: ${{ inputs.cancel }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Cancel stuck runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SELF_RUN_ID: ${{ github.run_id }}
+          QUEUED_MAX: ${{ inputs.queued-max-minutes }}
+          RUNNING_MAX: ${{ inputs.in-progress-max-minutes }}
+          CANCEL: "true"
+        run: |
+          set -euo pipefail
+          mode=dry-run; [ "$CANCEL" = "true" ] && mode=cancel
+          {
+            echo "## Stuck-run reaper (${mode}; queued > ${QUEUED_MAX} min, in_progress > ${RUNNING_MAX} min)"
+            echo
+            echo "| run | workflow | status | age (min) | action |"
+            echo "|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for status in queued in_progress; do
+            if [ "$status" = "queued" ]; then field=createdAt; max=$QUEUED_MAX; else field=startedAt; max=$RUNNING_MAX; fi
+            gh run list -R "$REPO" --status "$status" --limit 100 \
+              --json databaseId,createdAt,startedAt,workflowName \
+              --jq ".[] | select(.databaseId != ${SELF_RUN_ID}) | select(.${field} != null and .${field} != \"\") | select((now - (.${field} | fromdateiso8601)) > (${max} * 60)) | \"\(.databaseId)\t\(.workflowName)\t\(((now - (.${field} | fromdateiso8601)) / 60) | floor)\"" \
+            | while IFS=$'\t' read -r id name age; do
+                action="would cancel"
+                if [ "$mode" = "cancel" ]; then
+                  if gh run cancel -R "$REPO" "$id"; then action="cancelled"; else action="cancel failed"; fi
+                fi
+                echo "::warning::stuck run $id ($name, $status, ${age} min): $action"
+                echo "| $id | $name | $status | $age | $action |" >> "$GITHUB_STEP_SUMMARY"
+              done
+          done
