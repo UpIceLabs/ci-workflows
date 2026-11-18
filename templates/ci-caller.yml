@@ -29,6 +29,6 @@ jobs:
       timeout-minutes: 15
   # Your own jobs: always set timeout-minutes (GitHub default is 360).
   # build:
-  #   runs-on: ubuntu-latest
+  #   runs-on: [self-hosted, linux-ci]   # an allowed self-hosted runner; hosted spend is frozen
   #   timeout-minutes: 15
   #   steps: [...]
