@@ -16,10 +16,16 @@ jobs:
   secrets:
     uses: UpIceLabs/ci-workflows/.github/workflows/secret-scan.yml@REVIEWED_COMMIT_SHA
     with:
+      # Hosted Actions spend is frozen: always pass an allowed self-hosted runner,
+      # never rely on the implicit ubuntu-latest fallback.
+      runs-on: '<ALLOWED_RUNNER_JSON e.g. ["self-hosted","linux-ci"]>'
       timeout-minutes: 10
   node:
     uses: UpIceLabs/ci-workflows/.github/workflows/node-gates.yml@REVIEWED_COMMIT_SHA
     with:
+      # Hosted Actions spend is frozen: always pass an allowed self-hosted runner,
+      # never rely on the implicit ubuntu-latest fallback.
+      runs-on: '<ALLOWED_RUNNER_JSON e.g. ["self-hosted","linux-ci"]>'
       timeout-minutes: 15
   # Your own jobs: always set timeout-minutes (GitHub default is 360).
   # build:

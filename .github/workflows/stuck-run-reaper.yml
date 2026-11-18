@@ -1,27 +1,36 @@
-# Reusable stuck-run reaper (BEN-17832). Finds runs of the CALLING repository
-# that are stuck: queued longer than `queued-max-minutes` (from createdAt) or
-# in_progress longer than `in-progress-max-minutes` (from startedAt, so re-runs
-# of old runs are not flagged). Own run is excluded.
+# Reusable stuck-run reaper (BEN-17832), report only. Finds runs of the CALLING
+# repository that are stuck: queued longer than `queued-max-minutes` (from
+# createdAt) or in_progress longer than `in-progress-max-minutes` (from
+# startedAt, so re-runs of old runs are not flagged). Own run is excluded.
 #
-# Default is report-only: the `report` job needs only actions: read.
-# With `cancel: true` the separate `cancel` job runs instead and is the only
-# job with actions: write. A called workflow cannot raise permissions above
-# the calling job, so the caller grants actions: write only when it sets
-# cancel: true (see README starter).
+# REPORT ONLY: every permission in this file is read-only. To cancel stuck runs
+# call stuck-run-reaper-cancel.yml instead; GitHub validates the permissions a
+# called workflow requests at startup for all its jobs, so the cancel permission
+# lives in a separate file and a report-only caller never has to grant it.
+#
+# Needs the `gh` CLI on the runner (preinstalled on GitHub-hosted images; on a
+# self-hosted runner install it). The job fails with a clear message if missing.
+# At most 500 runs per status are inspected (gh run list --limit 500).
+#
+# `exclude-workflows`: newline or comma separated workflow names or file names
+# (e.g. deploy.yml) that legitimately run longer than the thresholds, such as
+# deploy or nightly workflows. Excluded in both report and cancel modes.
 #
 # runs-on is REQUIRED with no default: hosted Actions spend is frozen, so a
 # hosted default would bill or queue forever for private callers.
 # Pass an allowed non-merge self-hosted runner (e.g. '["self-hosted","auditor"]').
 # Do not use vars.CI_RUNNER: the reaper must not queue behind the runs it reaps.
+# Keep this file and its sibling (stuck-run-reaper.yml / stuck-run-reaper-cancel.yml)
+# in sync: tests/workflows.test.cjs asserts the same thresholds, inputs and filter.
 name: stuck-run-reaper
 
 on:
   workflow_call:
     inputs:
-      cancel:
-        description: 'Cancel stuck runs instead of only reporting them. Caller must grant actions: write.'
-        type: boolean
-        default: false
+      exclude-workflows:
+        description: 'Newline or comma separated workflow names or file names to skip (deploy/nightly workflows that legitimately run longer than the thresholds).'
+        type: string
+        default: ''
       in-progress-max-minutes:
         type: number
         default: 180
@@ -42,7 +51,6 @@ permissions:
 
 jobs:
   report:
-    if: ${{ !inputs.cancel }}
     runs-on: ${{ fromJSON(startsWith(inputs.runs-on, '[') && inputs.runs-on || format('["{0}"]', inputs.runs-on)) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -56,10 +64,25 @@ jobs:
           SELF_RUN_ID: ${{ github.run_id }}
           QUEUED_MAX: ${{ inputs.queued-max-minutes }}
           RUNNING_MAX: ${{ inputs.in-progress-max-minutes }}
+          EXCLUDE_RAW: ${{ inputs.exclude-workflows }}
           CANCEL: "false"
         run: |
           set -euo pipefail
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "::error::stuck-run-reaper needs the gh CLI on the runner; install gh on this self-hosted runner"
+            exit 1
+          fi
           mode=dry-run; [ "$CANCEL" = "true" ] && mode=cancel
+          # Normalise exclude list (newline/comma separated) to a JSON array of
+          # names, then add the names of workflows whose file name is listed.
+          EXCLUDE_JSON=$(printf '%s\n' "$EXCLUDE_RAW" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | awk 'NF' | awk 'BEGIN{printf "["} {gsub(/\\/,"\\\\"); gsub(/"/,"\\\""); printf "%s\"%s\"", (n++?",":""), $0} END{printf "]"}')
+          export EXCLUDE_JSON
+          if [ "$EXCLUDE_JSON" != "[]" ]; then
+            # shellcheck disable=SC2016  # jq variables, not shell
+            EXCLUDE_JSON=$(gh workflow list -R "$REPO" --all --limit 500 --json name,path \
+              --jq '(env.EXCLUDE_JSON | fromjson) as $ex | $ex + [.[] | select((.path | split("/") | last) as $f | any($ex[]; . == $f)) | .name] | unique')
+            export EXCLUDE_JSON
+          fi
           {
             echo "## Stuck-run reaper (${mode}; queued > ${QUEUED_MAX} min, in_progress > ${RUNNING_MAX} min)"
             echo
@@ -70,48 +93,9 @@ jobs:
             # queued: age since createdAt. in_progress: age since startedAt
             # (run_started_at), which resets on re-run; createdAt does not.
             if [ "$status" = "queued" ]; then field=createdAt; max=$QUEUED_MAX; else field=startedAt; max=$RUNNING_MAX; fi
-            gh run list -R "$REPO" --status "$status" --limit 100 \
+            gh run list -R "$REPO" --status "$status" --limit 500 \
               --json databaseId,createdAt,startedAt,workflowName \
-              --jq ".[] | select(.databaseId != ${SELF_RUN_ID}) | select(.${field} != null and .${field} != \"\") | select((now - (.${field} | fromdateiso8601)) > (${max} * 60)) | \"\(.databaseId)\t\(.workflowName)\t\(((now - (.${field} | fromdateiso8601)) / 60) | floor)\"" \
-            | while IFS=$'\t' read -r id name age; do
-                action="would cancel"
-                if [ "$mode" = "cancel" ]; then
-                  if gh run cancel -R "$REPO" "$id"; then action="cancelled"; else action="cancel failed"; fi
-                fi
-                echo "::warning::stuck run $id ($name, $status, ${age} min): $action"
-                echo "| $id | $name | $status | $age | $action |" >> "$GITHUB_STEP_SUMMARY"
-              done
-          done
-  cancel:
-    if: ${{ inputs.cancel }}
-    runs-on: ${{ fromJSON(startsWith(inputs.runs-on, '[') && inputs.runs-on || format('["{0}"]', inputs.runs-on)) }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: Cancel stuck runs
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          SELF_RUN_ID: ${{ github.run_id }}
-          QUEUED_MAX: ${{ inputs.queued-max-minutes }}
-          RUNNING_MAX: ${{ inputs.in-progress-max-minutes }}
-          CANCEL: "true"
-        run: |
-          set -euo pipefail
-          mode=dry-run; [ "$CANCEL" = "true" ] && mode=cancel
-          {
-            echo "## Stuck-run reaper (${mode}; queued > ${QUEUED_MAX} min, in_progress > ${RUNNING_MAX} min)"
-            echo
-            echo "| run | workflow | status | age (min) | action |"
-            echo "|---|---|---|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-          for status in queued in_progress; do
-            if [ "$status" = "queued" ]; then field=createdAt; max=$QUEUED_MAX; else field=startedAt; max=$RUNNING_MAX; fi
-            gh run list -R "$REPO" --status "$status" --limit 100 \
-              --json databaseId,createdAt,startedAt,workflowName \
-              --jq ".[] | select(.databaseId != ${SELF_RUN_ID}) | select(.${field} != null and .${field} != \"\") | select((now - (.${field} | fromdateiso8601)) > (${max} * 60)) | \"\(.databaseId)\t\(.workflowName)\t\(((now - (.${field} | fromdateiso8601)) / 60) | floor)\"" \
+              --jq ".[] | select(.databaseId != ${SELF_RUN_ID}) | select(.workflowName as \$n | any((env.EXCLUDE_JSON | fromjson)[]; . == \$n) | not) | select(.${field} != null and .${field} != \"\") | select((now - (.${field} | fromdateiso8601)) > (${max} * 60)) | \"\(.databaseId)\t\(.workflowName)\t\(((now - (.${field} | fromdateiso8601)) / 60) | floor)\"" \
             | while IFS=$'\t' read -r id name age; do
                 action="would cancel"
                 if [ "$mode" = "cancel" ]; then

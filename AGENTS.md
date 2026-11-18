@@ -11,7 +11,9 @@ callers (CEO decision, 2026-11-06, BEN-17190) choose their own runner; keep the
 default hosted and keep the three workflows' expressions identical. Pin
 third-party Actions and document consumer-facing compatibility changes.
 
-Permissions are read-only by default. The one named exception is the opt-in
-`cancel` job in `stuck-run-reaper.yml`, which has job-level `actions: write`
-because cancelling a run needs it; the `report` job and the workflow level stay
-read-only, and a caller must grant `actions: write` itself to enable it.
+Permissions are read-only by default. The one named exception is
+`stuck-run-reaper-cancel.yml`, the only file requesting `actions: write`
+(job-level, because cancelling a run needs it). `stuck-run-reaper.yml` is
+report-only and read-only everywhere; the two are separate files because GitHub
+validates a called workflow's requested permissions for all jobs at startup. A
+caller grants `actions: write` itself only to use the cancel workflow.
