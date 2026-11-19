@@ -1,0 +1,4 @@
+project:
+  owner_repo: ronniepinnell/ci-workflows
+services:
+  ci: github-actions
